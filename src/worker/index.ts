@@ -1717,6 +1717,11 @@ app.get('*', async (c) => {
   }
 });
 
-serve({ fetch: app.fetch, port: 3000 }, (info) => {
-  console.log(`🚀 Servidor backend corriendo en http://localhost:${info.port}`);
+const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+serve({ 
+  fetch: app.fetch, 
+  port: port,
+  hostname: '0.0.0.0'
+}, (info) => {
+  console.log(`🚀 Servidor backend corriendo en http://${info.address}:${info.port}`);
 });
