@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import fs from "fs/promises";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import bcrypt from "bcryptjs";
@@ -1693,6 +1695,25 @@ app.delete("/api/superadmin/contacts/:id", async (c) => {
   } catch (error) {
     console.error(error);
     return c.json({ error: "Error interno del servidor" }, 500);
+  }
+});
+
+// Serve static assets for production
+app.use('/assets/*', serveStatic({ root: './dist' }));
+app.use('/favicon.ico', serveStatic({ path: './dist/favicon.ico' }));
+app.use('/vite.svg', serveStatic({ path: './dist/vite.svg' }));
+
+// Catch-all route to serve the React app
+app.get('*', async (c) => {
+  if (c.req.path.startsWith('/api')) {
+    return c.json({ error: 'Endpoint no encontrado' }, 404);
+  }
+  
+  try {
+    const html = await fs.readFile('./dist/index.html', 'utf-8');
+    return c.html(html);
+  } catch (e) {
+    return c.text('El frontend no ha sido construido aún. Ejecuta "npm run build".', 404);
   }
 });
 
