@@ -51,6 +51,7 @@
     "dev:client": "vite",
     "dev": "npm-run-all --parallel dev:server \"dev:client {@}\" --",
     "build": "tsc -b && vite build",
+    "start": "tsx src/worker/index.ts",
     "lint": "eslint .",
     "db:init": "tsx src/worker/init-db.ts"
   }
