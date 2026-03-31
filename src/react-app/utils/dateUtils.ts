@@ -1,17 +1,15 @@
-// Utility functions to handle dates safely without timezone offset issues
+// Utility functions to handle dates without timezone issues
 
 /**
  * Format a date string to local date display (dd/mm/yyyy)
- * Handles standard "YYYY-MM-DD" and robustly ignores any time data.
+ * Handles the date as local date without timezone conversion
  */
 export function formatLocalDate(dateString: string): string {
   if (!dateString) return '';
   
-  // Extract just the YYYY-MM-DD part cleanly before doing any Date parsing
+  // Parse the date as local date (not UTC)
   const [year, month, day] = dateString.split('T')[0].split('-');
-  
-  // Create date locally to avoid UTC conversion shifts
-  const date = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10));
+  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
   
   return date.toLocaleDateString('es-PE', {
     year: 'numeric',
@@ -22,16 +20,23 @@ export function formatLocalDate(dateString: string): string {
 
 /**
  * Get the date value for input[type="date"] from a date string
- * Ensures we get YYYY-MM-DD format strictly.
+ * Ensures we get YYYY-MM-DD format without timezone issues
  */
 export function getInputDateValue(dateString: string): string {
   if (!dateString) return '';
+  
+  // Return just the date part (YYYY-MM-DD) without time
   return dateString.split('T')[0];
 }
 
 /**
- * Get today's date in YYYY-MM-DD format explicitly in the user's timezone
+ * Get today's date in YYYY-MM-DD format for input[type="date"]
  */
 export function getTodayInputValue(): string {
-  return new Date().toLocaleDateString('en-CA'); // 'en-CA' natively formats as YYYY-MM-DD
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
 }
