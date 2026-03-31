@@ -1544,7 +1544,7 @@ app.put("/api/superadmin/platform-customization", async (c) => {
     
     const existing = await sql`SELECT id FROM platform_customization WHERE setting_type = 'superadmin' AND organization_id IS NULL LIMIT 1`;
     if (existing.length > 0) await sql`UPDATE platform_customization SET platform_name=${platform_name}, logo_url=${logo_url}, favicon_url=${favicon_url}, page_title=${page_title} WHERE id=${existing[0].id}`;
-    else await sql`INSERT INTO platform_customization (setting_type, superadmin, platform_name, logo_url, favicon_url, page_title) VALUES ('superadmin', ${platform_name}, ${logo_url}, ${favicon_url}, ${page_title})`;
+    else await sql`INSERT INTO platform_customization (setting_type, platform_name, logo_url, favicon_url, page_title) VALUES ('superadmin', ${platform_name}, ${logo_url}, ${favicon_url}, ${page_title})`;
     
     const upsertSetting = async (key: string, val: string) => {
       const e = await sql`SELECT id FROM platform_settings WHERE setting_key = ${key} LIMIT 1`;
@@ -1723,5 +1723,5 @@ serve({
   port: port,
   hostname: '0.0.0.0'
 }, (info) => {
-  console.log(`✅ ISITES PRO ONLINE - Host: ${info.address} - Puerto: ${info.port}`);
+  console.log(`🚀 Servidor backend corriendo en http://${info.address}:${info.port}`);
 });
