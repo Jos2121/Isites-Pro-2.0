@@ -3,8 +3,8 @@ CREATE TABLE IF NOT EXISTS organizations (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 2. SaaS Plans (Planes globales del SuperAdmin)
@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS saas_plans (
     benefits TEXT,
     is_free_plan BOOLEAN DEFAULT false,
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 3. Users (SuperAdmin, Admins y Employees)
@@ -33,12 +33,12 @@ CREATE TABLE IF NOT EXISTS users (
     organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
     phone VARCHAR(50),
     plan_id INTEGER REFERENCES saas_plans(id) ON DELETE SET NULL,
-    subscription_start_date TIMESTAMP,
-    subscription_end_date TIMESTAMP,
+    subscription_start_date TIMESTAMPTZ,
+    subscription_end_date TIMESTAMPTZ,
     password_hash VARCHAR(255) NOT NULL,
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 4. Customers (Clientes de las organizaciones)
@@ -49,8 +49,8 @@ CREATE TABLE IF NOT EXISTS customers (
     phone VARCHAR(50),
     email VARCHAR(255),
     notes TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 5. Subscription Plans (Planes creados por los Admins para sus clientes)
@@ -64,8 +64,8 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
     benefits TEXT,
     notes TEXT,
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 6. Subscriptions (Suscripciones de clientes a los planes de las organizaciones)
@@ -76,12 +76,12 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     plan_id INTEGER REFERENCES subscription_plans(id) ON DELETE CASCADE,
     assigned_employee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     status VARCHAR(50) DEFAULT 'pending',
-    start_date TIMESTAMP,
-    end_date TIMESTAMP,
+    start_date TIMESTAMPTZ,
+    end_date TIMESTAMPTZ,
     notes TEXT,
     discount DECIMAL(10,2) DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 7. Payments (Pagos, tanto del SaaS como de los Admins)
@@ -93,11 +93,11 @@ CREATE TABLE IF NOT EXISTS payments (
     payment_method VARCHAR(50) DEFAULT 'other',
     status VARCHAR(20) DEFAULT 'confirmed',
     transaction_reference VARCHAR(100),
-    payment_date TIMESTAMP DEFAULT NOW(),
+    payment_date TIMESTAMPTZ DEFAULT NOW(),
     payment_type VARCHAR(50),
     is_platform_income BOOLEAN DEFAULT false,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 8. Payment Methods (Globales del SuperAdmin)
@@ -110,8 +110,8 @@ CREATE TABLE IF NOT EXISTS payment_methods (
     account_holder VARCHAR(255),
     bank_name VARCHAR(255),
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 9. Organization Payment Methods (Métodos de pago de cada organización)
@@ -125,8 +125,8 @@ CREATE TABLE IF NOT EXISTS organization_payment_methods (
     account_holder VARCHAR(255),
     bank_name VARCHAR(255),
     is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 10. Platform Settings (Ajustes clave/valor globales)
@@ -134,8 +134,8 @@ CREATE TABLE IF NOT EXISTS platform_settings (
     id SERIAL PRIMARY KEY,
     setting_key VARCHAR(100) UNIQUE NOT NULL,
     setting_value TEXT,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 11. Platform Customization (Personalización de marca)
@@ -147,8 +147,8 @@ CREATE TABLE IF NOT EXISTS platform_customization (
     logo_url TEXT,
     favicon_url TEXT,
     page_title VARCHAR(255),
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -------------------------------------------------------------------------
