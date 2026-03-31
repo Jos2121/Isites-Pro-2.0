@@ -33,30 +33,25 @@ const validateJson = <T extends z.ZodTypeAny>(schema: T) =>
     }
   });
 
+// Configurando Timezone nativo en la conexión a Postgres
 const sql = postgres(process.env.DATABASE_URL!, {
   max: 10,
+  connection: { timezone: 'America/Lima' }
 });
 
-const getOffsetMinutes = () => Number(process.env.TZ_OFFSET_MINUTES || 0);
-
-const getLocalTodayString = () => {
-  const d = new Date(Date.now() - getOffsetMinutes() * 60000);
-  return d.toISOString().split('T')[0];
-};
-
-const getLocalIsoString = () => {
-  const d = new Date(Date.now() - getOffsetMinutes() * 60000);
-  return d.toISOString().slice(0, 19).replace('T', ' ');
+const getTodayString = () => {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
 };
 
 const addMonthsToDateString = (dateStr: string, months: number) => {
-  const d = new Date(dateStr + 'T00:00:00Z');
+  // Se usa T12:00:00Z para evitar cruces por medianoche
+  const d = new Date(dateStr + 'T12:00:00Z');
   d.setUTCMonth(d.getUTCMonth() + months);
   return d.toISOString().split('T')[0];
 };
 
 const addYearsToDateString = (dateStr: string, years: number) => {
-  const d = new Date(dateStr + 'T00:00:00Z');
+  const d = new Date(dateStr + 'T12:00:00Z');
   d.setUTCFullYear(d.getUTCFullYear() + years);
   return d.toISOString().split('T')[0];
 };
@@ -90,7 +85,7 @@ app.use('/api/*', async (c, next) => {
       if (adminInfo) {
         if (!adminInfo.is_active) return c.json({ error: "La cuenta de la organización está suspendida." }, 401);
         
-        const todayStr = getLocalTodayString();
+        const todayStr = getTodayString();
         const endDateStr = adminInfo.subscription_end_date 
           ? (typeof adminInfo.subscription_end_date === 'string' ? adminInfo.subscription_end_date.split('T')[0] : adminInfo.subscription_end_date.toISOString().split('T')[0]) 
           : null;
@@ -107,7 +102,6 @@ app.use('/api/*', async (c, next) => {
   }
 });
 
-// MIDDLEWARE DE PROTECCIÓN PARA SUPERADMIN
 app.use('/api/superadmin/*', async (c, next) => {
   try {
     const user = c.get('jwtPayload');
@@ -166,7 +160,7 @@ app.post("/api/auth/login", validateJson(LoginSchema), async (c) => {
       const adminInfo = user.role === 'admin' ? user : (await sql`SELECT is_active, subscription_end_date FROM users WHERE organization_id = ${user.organization_id} AND role = 'admin' LIMIT 1`)[0];
       if (adminInfo) {
         if (!adminInfo.is_active) return c.json({ error: "La cuenta de la organización está suspendida." }, 403);
-        const todayStr = getLocalTodayString();
+        const todayStr = getTodayString();
         const endDateStr = adminInfo.subscription_end_date ? (typeof adminInfo.subscription_end_date === 'string' ? adminInfo.subscription_end_date.split('T')[0] : adminInfo.subscription_end_date.toISOString().split('T')[0]) : null;
         if (endDateStr && endDateStr < todayStr) return c.json({ error: "La suscripción ha vencido. Por favor, renueva tu plan." }, 403);
       }
@@ -235,7 +229,7 @@ app.post("/api/auth/register-free", async (c) => {
     const plan = plans[0];
     const passwordHash = await bcrypt.hash(password, 10);
     const orgs = await sql`INSERT INTO organizations (name) VALUES (${organization_name}) RETURNING id`;
-    const sDateStr = getLocalTodayString();
+    const sDateStr = getTodayString();
     let eDateStr;
     if (plan.duration_months) eDateStr = addMonthsToDateString(sDateStr, Number(plan.duration_months));
     else eDateStr = addMonthsToDateString(sDateStr, 1);
@@ -262,7 +256,7 @@ app.get("/api/subscriptions", async (c) => {
     if (!organizationId) return c.json({ error: "organization_id es requerido" }, 400);
     if (user.role !== 'superadmin' && user.organization_id !== parseInt(organizationId)) return c.json({ error: "Acceso denegado" }, 403);
 
-    const todayStr = getLocalTodayString();
+    const todayStr = getTodayString();
     await sql`UPDATE subscriptions SET status = 'active' WHERE organization_id = ${organizationId} AND status = 'pending' AND start_date <= ${todayStr}`;
     await sql`UPDATE subscriptions SET status = 'expired' WHERE organization_id = ${organizationId} AND status = 'active' AND end_date < ${todayStr}`;
 
@@ -377,7 +371,7 @@ app.post("/api/subscriptions/:id/renew", async (c) => {
         else return c.json({ error: "Plan inválido" }, 400);
       }
 
-      const todayStr = getLocalTodayString();
+      const todayStr = getTodayString();
       let currentEndDateStr = sub.end_date ? (typeof sub.end_date === 'string' ? sub.end_date.split('T')[0] : sub.end_date.toISOString().split('T')[0]) : todayStr;
       let newStartDateStr = null;
 
@@ -417,7 +411,7 @@ app.put("/api/subscriptions/:id", async (c) => {
       if (user.role !== 'superadmin' && user.organization_id !== sub.organization_id) return c.json({ error: "Acceso denegado" }, 403);
 
       if (customer_name !== undefined || customer_phone !== undefined || customer_email !== undefined) {
-        const updateCustomerData: any = { updated_at: getLocalIsoString() };
+        const updateCustomerData: any = { updated_at: new Date() };
         if (customer_name !== undefined) updateCustomerData.name = customer_name;
         if (customer_phone !== undefined) updateCustomerData.phone = customer_phone;
         if (customer_email !== undefined) updateCustomerData.email = customer_email || null;
@@ -428,9 +422,9 @@ app.put("/api/subscriptions/:id", async (c) => {
       const planToUse = parsedPlanId || sub.plan_id;
       const isUpgrade = parsedPlanId && parsedPlanId !== sub.plan_id && upgrade_amount > 0;
       
-      let startDateToUse = start_date || (sub.start_date ? (typeof sub.start_date === 'string' ? sub.start_date.split('T')[0] : sub.start_date.toISOString().split('T')[0]) : getLocalTodayString());
+      let startDateToUse = start_date || (sub.start_date ? (typeof sub.start_date === 'string' ? sub.start_date.split('T')[0] : sub.start_date.toISOString().split('T')[0]) : getTodayString());
 
-      if (isUpgrade) startDateToUse = sub.start_date ? (typeof sub.start_date === 'string' ? sub.start_date.split('T')[0] : sub.start_date.toISOString().split('T')[0]) : getLocalTodayString();
+      if (isUpgrade) startDateToUse = sub.start_date ? (typeof sub.start_date === 'string' ? sub.start_date.split('T')[0] : sub.start_date.toISOString().split('T')[0]) : getTodayString();
 
       let endDate = sub.end_date ? (typeof sub.end_date === 'string' ? sub.end_date.split('T')[0] : sub.end_date.toISOString().split('T')[0]) : null;
       
@@ -443,7 +437,7 @@ app.put("/api/subscriptions/:id", async (c) => {
         }
       }
 
-      const updateSubData: any = { end_date: endDate, notes: notes || null, updated_at: getLocalIsoString() };
+      const updateSubData: any = { end_date: endDate, notes: notes || null, updated_at: new Date() };
       if (parsedPlanId) updateSubData.plan_id = parsedPlanId;
       if (start_date && !isUpgrade) updateSubData.start_date = start_date;
       else if (isUpgrade) updateSubData.start_date = startDateToUse;
@@ -454,7 +448,7 @@ app.put("/api/subscriptions/:id", async (c) => {
         await tSql`INSERT INTO payments (organization_id, subscription_id, amount, payment_method, status, payment_date, payment_type, is_platform_income) VALUES (${sub.organization_id}, ${subscriptionId}, ${upgrade_amount}, 'other', 'confirmed', NOW(), 'upgrade', false)`;
       }
 
-      const todayStr = getLocalTodayString();
+      const todayStr = getTodayString();
       const updatedSubs = await tSql`SELECT * FROM subscriptions WHERE id = ${subscriptionId} LIMIT 1`;
       
       if (updatedSubs.length > 0 && updatedSubs[0].status !== 'cancelled') {
@@ -722,7 +716,7 @@ app.put("/api/users/:id", validateJson(UserUpdateSchema), async (c) => {
     if (user.role !== 'superadmin' && targetUser[0].organization_id !== user.organization_id) return c.json({ error: "Acceso denegado" }, 403);
 
     const { name, email, phone, password } = c.req.valid('json');
-    const updateData: any = { name, email, phone: phone || null, updated_at: getLocalIsoString() };
+    const updateData: any = { name, email, phone: phone || null, updated_at: new Date() };
     if (password) updateData.password_hash = await bcrypt.hash(password, 10);
     await sql`UPDATE users SET ${sql(updateData)} WHERE id = ${userId}`;
     return c.json({ message: "Actualizado" });
@@ -774,7 +768,7 @@ app.get("/api/admin/income", async (c) => {
     const orgId = user.organization_id;
     if (!orgId) return c.json({ error: "Sin organización" }, 400);
 
-    const todayStr = getLocalTodayString();
+    const todayStr = getTodayString();
     const currentMonthPrefix = todayStr.substring(0, 7);
 
     const page = parseInt(c.req.query("page") || "1", 10) || 1;
@@ -814,7 +808,7 @@ app.get("/api/admin/income", async (c) => {
     const total = parseInt(countResult[0].count, 10);
 
     const detailsQuery = await sql`
-      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as payment_date_formatted, c.name as customer_name, sp.name as plan_name
+      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS') as payment_date_formatted, c.name as customer_name, sp.name as plan_name
       FROM payments p LEFT JOIN subscriptions s ON p.subscription_id = s.id LEFT JOIN customers c ON s.customer_id = c.id LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
       WHERE p.organization_id = ${orgId} AND p.is_platform_income = false AND p.status != 'cancelled'
       ${searchCondition} ${typeCondition} ${startCondition} ${endCondition}
@@ -850,7 +844,7 @@ app.get("/api/admin/income", async (c) => {
 
 app.get("/api/superadmin/income", async (c) => {
   try {
-    const todayStr = getLocalTodayString();
+    const todayStr = getTodayString();
     const currentMonthPrefix = todayStr.substring(0, 7);
 
     const page = parseInt(c.req.query("page") || "1", 10) || 1;
@@ -886,7 +880,7 @@ app.get("/api/superadmin/income", async (c) => {
     const total = parseInt(countResult[0].count, 10);
 
     const detailsQuery = await sql`
-      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as payment_date_formatted, o.name as organization_name
+      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS') as payment_date_formatted, o.name as organization_name
       FROM payments p LEFT JOIN organizations o ON p.organization_id = o.id
       WHERE p.is_platform_income = true AND p.status != 'cancelled'
       ${searchCondition} ${typeCondition} ${startCondition} ${endCondition}
@@ -935,7 +929,7 @@ app.get("/api/admin/income/export", async (c) => {
     const endCondition = endDate ? sql` AND COALESCE(p.payment_date, p.created_at, NOW()) <= ${endDate + ' 23:59:59'}` : sql``;
 
     const detailsQuery = await sql`
-      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as payment_date_formatted, c.name as customer_name, sp.name as plan_name
+      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS') as payment_date_formatted, c.name as customer_name, sp.name as plan_name
       FROM payments p LEFT JOIN subscriptions s ON p.subscription_id = s.id LEFT JOIN customers c ON s.customer_id = c.id LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
       WHERE p.organization_id = ${orgId} AND p.is_platform_income = false AND p.status != 'cancelled'
       ${searchCondition} ${typeCondition} ${startCondition} ${endCondition}
@@ -963,7 +957,7 @@ app.get("/api/superadmin/income/export", async (c) => {
     const endCondition = endDate ? sql` AND COALESCE(p.payment_date, p.created_at, NOW()) <= ${endDate + ' 23:59:59'}` : sql``;
 
     const detailsQuery = await sql`
-      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as payment_date_formatted, o.name as organization_name
+      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS') as payment_date_formatted, o.name as organization_name
       FROM payments p LEFT JOIN organizations o ON p.organization_id = o.id
       WHERE p.is_platform_income = true AND p.status != 'cancelled'
       ${searchCondition} ${typeCondition} ${startCondition} ${endCondition}
@@ -1003,7 +997,7 @@ app.get("/api/admin/dashboard-metrics", async (c) => {
     if (user.role !== 'superadmin' && user.organization_id !== Number(orgId)) {
       return c.json({ error: "Acceso denegado: No puedes leer datos de otra organización" }, 403);
     }
-    const todayStr = getLocalTodayString();
+    const todayStr = getTodayString();
     
     const planLimits = await sql`
       SELECT sp.name, sp.subscription_limit, sp.employee_limit, sp.plan_limit 
@@ -1046,7 +1040,7 @@ app.get("/api/admin/dashboard-metrics", async (c) => {
 
 app.get("/api/superadmin/stats", async (c) => {
   try {
-    const todayStr = getLocalTodayString();
+    const todayStr = getTodayString();
     const currentMonth = todayStr.substring(0, 7);
 
     const counts = await sql`
@@ -1061,9 +1055,9 @@ app.get("/api/superadmin/stats", async (c) => {
     
     const revenue = await sql`
       SELECT 
-        COALESCE(SUM(CASE WHEN payment_date::text LIKE ${todayStr + '%'} THEN amount ELSE 0 END), 0) as daily_rev,
-        COALESCE(SUM(CASE WHEN payment_date::text LIKE ${currentMonth + '%'} THEN amount ELSE 0 END), 0) as monthly_rev,
-        COALESCE(SUM(CASE WHEN payment_date >= NOW() - INTERVAL '12 months' THEN amount ELSE 0 END), 0) as total_rev
+        COALESCE(SUM(CASE WHEN TO_CHAR(COALESCE(payment_date, created_at, NOW()), 'YYYY-MM-DD') = ${todayStr} THEN amount ELSE 0 END), 0) as daily_rev,
+        COALESCE(SUM(CASE WHEN TO_CHAR(COALESCE(payment_date, created_at, NOW()), 'YYYY-MM') = ${currentMonth} THEN amount ELSE 0 END), 0) as monthly_rev,
+        COALESCE(SUM(CASE WHEN COALESCE(payment_date, created_at, NOW()) >= NOW() - INTERVAL '12 months' THEN amount ELSE 0 END), 0) as total_rev
       FROM payments
       WHERE is_platform_income = true AND status = 'confirmed'
     `;
@@ -1158,7 +1152,7 @@ app.post("/api/superadmin/create-subscription", validateJson(SuperAdminCreateSub
       
       const plan = plans[0];
       const org = await tSql`INSERT INTO organizations (name) VALUES (${organization_name}) RETURNING id`;
-      const sDateStr = start_date || getLocalTodayString();
+      const sDateStr = start_date || getTodayString();
       let eDateStr;
       if (plan.duration_months) eDateStr = addMonthsToDateString(sDateStr, Number(plan.duration_months));
       else eDateStr = addYearsToDateString(sDateStr, 1);
@@ -1194,7 +1188,7 @@ app.post("/api/superadmin/admin-subscriptions/:id/renew", async (c) => {
         else return c.json({ error: "Plan inexistente" }, 400);
       }
       
-      const todayStr = getLocalTodayString();
+      const todayStr = getTodayString();
       let currentEndDateStr = targetUser.subscription_end_date ? (typeof targetUser.subscription_end_date === 'string' ? targetUser.subscription_end_date.split('T')[0] : targetUser.subscription_end_date.toISOString().split('T')[0]) : todayStr;
       let newStartDateStr = null;
 
@@ -1229,7 +1223,7 @@ app.get("/api/superadmin/admin-subscriptions", async (c) => {
     const countResult = await sql`SELECT COUNT(*) FROM users WHERE role = 'admin'`;
     const total = parseInt(countResult[0].count, 10);
 
-    const todayStr = getLocalTodayString();
+    const todayStr = getTodayString();
     const users = await sql`
       SELECT u.*, o.name as org_name, p.name as plan_name, p.price as plan_price, p.duration_type 
       FROM users u 
@@ -1309,15 +1303,15 @@ app.put("/api/superadmin/admin-subscriptions/:id", async (c) => {
     const curr = await sql`SELECT email, plan_id, subscription_start_date, organization_id FROM users WHERE id = ${userId} LIMIT 1`;
     if (curr.length === 0) return c.json({ error: "Usuario no encontrado" }, 404);
 
-    const updateData: any = { name, email, phone: phone || null, updated_at: getLocalIsoString() };
+    const updateData: any = { name, email, phone: phone || null, updated_at: new Date() };
     if (password) updateData.password_hash = await bcrypt.hash(password, 10);
 
     const parsedPlanId = plan_id ? parseInt(plan_id, 10) : null;
     const pId = parsedPlanId || curr[0].plan_id;
     const isUpgrade = parsedPlanId && parsedPlanId !== curr[0].plan_id && upgrade_amount > 0;
     
-    let sDate = start_date || (curr[0].subscription_start_date ? (typeof curr[0].subscription_start_date === 'string' ? curr[0].subscription_start_date.split('T')[0] : curr[0].subscription_start_date.toISOString().split('T')[0]) : getLocalTodayString());
-    if (isUpgrade) sDate = curr[0].subscription_start_date ? (typeof curr[0].subscription_start_date === 'string' ? curr[0].subscription_start_date.split('T')[0] : curr[0].subscription_start_date.toISOString().split('T')[0]) : getLocalTodayString();
+    let sDate = start_date || (curr[0].subscription_start_date ? (typeof curr[0].subscription_start_date === 'string' ? curr[0].subscription_start_date.split('T')[0] : curr[0].subscription_start_date.toISOString().split('T')[0]) : getTodayString());
+    if (isUpgrade) sDate = curr[0].subscription_start_date ? (typeof curr[0].subscription_start_date === 'string' ? curr[0].subscription_start_date.split('T')[0] : curr[0].subscription_start_date.toISOString().split('T')[0]) : getTodayString();
     
     if (pId && sDate) {
       const p = await sql`SELECT * FROM saas_plans WHERE id = ${pId} LIMIT 1`;
@@ -1580,7 +1574,7 @@ app.get("/api/my-account/:id", async (c) => {
     if (users.length === 0) return c.json({ error: "No encontrado" }, 404);
     const u = users[0];
     
-    const todayStr = getLocalTodayString();
+    const todayStr = getTodayString();
     let isSubActive = 1; let status = 'pending';
     
     const endDateStr = u.subscription_end_date ? (typeof u.subscription_end_date === 'string' ? u.subscription_end_date.split('T')[0] : u.subscription_end_date.toISOString().split('T')[0]) : null;

@@ -21,11 +21,11 @@ async function initDb() {
         payment_method VARCHAR(50) DEFAULT 'other',
         status VARCHAR(20) DEFAULT 'confirmed',
         transaction_reference VARCHAR(100),
-        payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        payment_date TIMESTAMPTZ DEFAULT NOW(),
         payment_type VARCHAR(50) DEFAULT 'new_subscription',
         is_platform_income BOOLEAN DEFAULT false,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `;
     console.log("Tabla 'payments' verificada/creada exitosamente.");
