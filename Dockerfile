@@ -1,10 +1,17 @@
 FROM node:22-alpine
+
 WORKDIR /app
-RUN npm install -g pnpm tsx
+
+RUN npm install -g pnpm
+
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod=false
-ARG CACHEBUST=3
+
+RUN pnpm install
+
 COPY . .
-RUN pnpm exec vite build
+
+RUN pnpm run build
+
 EXPOSE 3000
-CMD ["tsx", "src/worker/index.ts"]
+
+CMD ["pnpm", "run", "start"]
