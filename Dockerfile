@@ -11,7 +11,7 @@ RUN pnpm install
 ARG CACHEBUST=1
 COPY . .
 
-RUN pnpm run build
+RUN pnpm exec vite build
 
 EXPOSE 3000
 
