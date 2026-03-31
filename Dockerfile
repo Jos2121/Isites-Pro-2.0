@@ -8,6 +8,7 @@ COPY package.json pnpm-lock.yaml ./
 
 RUN pnpm install
 
+ARG CACHEBUST=1
 COPY . .
 
 RUN pnpm run build

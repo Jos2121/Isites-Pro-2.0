@@ -1723,5 +1723,5 @@ serve({
   port: port,
   hostname: '0.0.0.0'
 }, (info) => {
-  console.log(`🚀 Servidor backend corriendo en http://${info.address}:${info.port}`);
+  console.log(`✅ ISITES PRO ONLINE - Host: ${info.address} - Puerto: ${info.port}`);
 });
