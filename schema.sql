@@ -1,4 +1,14 @@
+-- =========================================================================
+-- 0. CONFIGURACIÓN DE ZONA HORARIA (CRÍTICO PARA PERÚ)
+-- =========================================================================
+-- Esto asegura que NOW() y los DEFAULT TIMESTAMP usen la hora de Lima.
+-- Reemplaza 'isitespro_postgresql' con el nombre real de tu BD en Easypanel si es distinto.
+ALTER DATABASE subscript-bd SET timezone TO 'America/Lima';
+SET TIMEZONE='America/Lima';
+
+-- =========================================================================
 -- 1. Organizations (Tabla Raíz B2B)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS organizations (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -7,7 +17,9 @@ CREATE TABLE IF NOT EXISTS organizations (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 2. SaaS Plans (Planes globales del SuperAdmin)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS saas_plans (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -24,7 +36,9 @@ CREATE TABLE IF NOT EXISTS saas_plans (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 3. Users (SuperAdmin, Admins y Employees)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -41,7 +55,9 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 4. Customers (Clientes de las organizaciones)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS customers (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
@@ -53,7 +69,9 @@ CREATE TABLE IF NOT EXISTS customers (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 5. Subscription Plans (Planes creados por los Admins para sus clientes)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS subscription_plans (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
@@ -68,7 +86,9 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 6. Subscriptions (Suscripciones de clientes a los planes de las organizaciones)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS subscriptions (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
@@ -84,7 +104,9 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 7. Payments (Pagos, tanto del SaaS como de los Admins)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS payments (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
@@ -100,7 +122,9 @@ CREATE TABLE IF NOT EXISTS payments (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 8. Payment Methods (Globales del SuperAdmin)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS payment_methods (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -114,7 +138,9 @@ CREATE TABLE IF NOT EXISTS payment_methods (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 9. Organization Payment Methods (Métodos de pago de cada organización)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS organization_payment_methods (
     id SERIAL PRIMARY KEY,
     organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
@@ -129,7 +155,9 @@ CREATE TABLE IF NOT EXISTS organization_payment_methods (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 10. Platform Settings (Ajustes clave/valor globales)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS platform_settings (
     id SERIAL PRIMARY KEY,
     setting_key VARCHAR(100) UNIQUE NOT NULL,
@@ -138,7 +166,9 @@ CREATE TABLE IF NOT EXISTS platform_settings (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
+-- =========================================================================
 -- 11. Platform Customization (Personalización de marca)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS platform_customization (
     id SERIAL PRIMARY KEY,
     setting_type VARCHAR(50) DEFAULT 'superadmin',
@@ -151,9 +181,9 @@ CREATE TABLE IF NOT EXISTS platform_customization (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
--------------------------------------------------------------------------
+-- =========================================================================
 -- REGLA CRÍTICA: ÍNDICES DE OPTIMIZACIÓN Y AISLAMIENTO DE ALTO RENDIMIENTO
--------------------------------------------------------------------------
+-- =========================================================================
 
 -- Índices de aislamiento B2B
 CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
