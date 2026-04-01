@@ -33,30 +33,25 @@ const validateJson = <T extends z.ZodTypeAny>(schema: T) =>
     }
   });
 
+// Configurando Timezone nativo en la conexión a Postgres
 const sql = postgres(process.env.DATABASE_URL!, {
   max: 10,
+  connection: { timezone: 'America/Lima' }
 });
 
-const getOffsetMinutes = () => Number(process.env.TZ_OFFSET_MINUTES || 0);
+const getLocalTodayString = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Lima' });
 
-const getLocalTodayString = () => {
-  const d = new Date(Date.now() - getOffsetMinutes() * 60000);
-  return d.toISOString().split('T')[0];
-};
-
-const getLocalIsoString = () => {
-  const d = new Date(Date.now() - getOffsetMinutes() * 60000);
-  return d.toISOString().slice(0, 19).replace('T', ' ');
-};
+const getLocalIsoString = () => new Date().toLocaleString('sv-SE', { timeZone: 'America/Lima' }).replace('T', ' ');
 
 const addMonthsToDateString = (dateStr: string, months: number) => {
-  const d = new Date(dateStr + 'T00:00:00Z');
+  // Se usa T12:00:00Z para evitar cruces por medianoche
+  const d = new Date(dateStr + 'T12:00:00Z');
   d.setUTCMonth(d.getUTCMonth() + months);
   return d.toISOString().split('T')[0];
 };
 
 const addYearsToDateString = (dateStr: string, years: number) => {
-  const d = new Date(dateStr + 'T00:00:00Z');
+  const d = new Date(dateStr + 'T12:00:00Z');
   d.setUTCFullYear(d.getUTCFullYear() + years);
   return d.toISOString().split('T')[0];
 };
@@ -107,7 +102,6 @@ app.use('/api/*', async (c, next) => {
   }
 });
 
-// MIDDLEWARE DE PROTECCIÓN PARA SUPERADMIN
 app.use('/api/superadmin/*', async (c, next) => {
   try {
     const user = c.get('jwtPayload');
@@ -814,7 +808,7 @@ app.get("/api/admin/income", async (c) => {
     const total = parseInt(countResult[0].count, 10);
 
     const detailsQuery = await sql`
-      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as payment_date_formatted, c.name as customer_name, sp.name as plan_name
+      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS') as payment_date_formatted, c.name as customer_name, sp.name as plan_name
       FROM payments p LEFT JOIN subscriptions s ON p.subscription_id = s.id LEFT JOIN customers c ON s.customer_id = c.id LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
       WHERE p.organization_id = ${orgId} AND p.is_platform_income = false AND p.status != 'cancelled'
       ${searchCondition} ${typeCondition} ${startCondition} ${endCondition}
@@ -886,7 +880,7 @@ app.get("/api/superadmin/income", async (c) => {
     const total = parseInt(countResult[0].count, 10);
 
     const detailsQuery = await sql`
-      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as payment_date_formatted, o.name as organization_name
+      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS') as payment_date_formatted, o.name as organization_name
       FROM payments p LEFT JOIN organizations o ON p.organization_id = o.id
       WHERE p.is_platform_income = true AND p.status != 'cancelled'
       ${searchCondition} ${typeCondition} ${startCondition} ${endCondition}
@@ -935,7 +929,7 @@ app.get("/api/admin/income/export", async (c) => {
     const endCondition = endDate ? sql` AND COALESCE(p.payment_date, p.created_at, NOW()) <= ${endDate + ' 23:59:59'}` : sql``;
 
     const detailsQuery = await sql`
-      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as payment_date_formatted, c.name as customer_name, sp.name as plan_name
+      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS') as payment_date_formatted, c.name as customer_name, sp.name as plan_name
       FROM payments p LEFT JOIN subscriptions s ON p.subscription_id = s.id LEFT JOIN customers c ON s.customer_id = c.id LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
       WHERE p.organization_id = ${orgId} AND p.is_platform_income = false AND p.status != 'cancelled'
       ${searchCondition} ${typeCondition} ${startCondition} ${endCondition}
@@ -963,7 +957,7 @@ app.get("/api/superadmin/income/export", async (c) => {
     const endCondition = endDate ? sql` AND COALESCE(p.payment_date, p.created_at, NOW()) <= ${endDate + ' 23:59:59'}` : sql``;
 
     const detailsQuery = await sql`
-      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as payment_date_formatted, o.name as organization_name
+      SELECT p.*, TO_CHAR(COALESCE(p.payment_date, p.created_at, NOW()), 'YYYY-MM-DD"T"HH24:MI:SS') as payment_date_formatted, o.name as organization_name
       FROM payments p LEFT JOIN organizations o ON p.organization_id = o.id
       WHERE p.is_platform_income = true AND p.status != 'cancelled'
       ${searchCondition} ${typeCondition} ${startCondition} ${endCondition}
@@ -1061,9 +1055,9 @@ app.get("/api/superadmin/stats", async (c) => {
     
     const revenue = await sql`
       SELECT 
-        COALESCE(SUM(CASE WHEN payment_date::text LIKE ${todayStr + '%'} THEN amount ELSE 0 END), 0) as daily_rev,
-        COALESCE(SUM(CASE WHEN payment_date::text LIKE ${currentMonth + '%'} THEN amount ELSE 0 END), 0) as monthly_rev,
-        COALESCE(SUM(CASE WHEN payment_date >= NOW() - INTERVAL '12 months' THEN amount ELSE 0 END), 0) as total_rev
+        COALESCE(SUM(CASE WHEN TO_CHAR(COALESCE(payment_date, created_at, NOW()), 'YYYY-MM-DD') = ${todayStr} THEN amount ELSE 0 END), 0) as daily_rev,
+        COALESCE(SUM(CASE WHEN TO_CHAR(COALESCE(payment_date, created_at, NOW()), 'YYYY-MM') = ${currentMonth} THEN amount ELSE 0 END), 0) as monthly_rev,
+        COALESCE(SUM(CASE WHEN COALESCE(payment_date, created_at, NOW()) >= NOW() - INTERVAL '12 months' THEN amount ELSE 0 END), 0) as total_rev
       FROM payments
       WHERE is_platform_income = true AND status = 'confirmed'
     `;

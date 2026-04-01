@@ -1,10 +1,28 @@
 FROM node:22-alpine
+
+# Configurar zona horaria global para el contenedor Alpine
+ENV TZ=America/Lima
+RUN apk add --no-cache tzdata
+
 WORKDIR /app
-RUN npm install -g pnpm tsx
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --prod=false
-ARG CACHEBUST=100
+
+# Habilitar pnpm
+RUN corepack enable pnpm
+
+# Copiar archivos de dependencias
+COPY package.json pnpm-lock.yaml* ./
+
+# Instalar dependencias
+RUN pnpm install
+
+# Copiar el resto del código fuente
 COPY . .
-RUN pnpm exec vite build
+
+# Construir el frontend y backend (Ejecutando tsc y vite build)
+RUN pnpm run build
+
+# Exponer el puerto
 EXPOSE 3000
-CMD ["tsx", "src/worker/index.ts"]
+
+# Iniciar la aplicación
+CMD ["pnpm", "start"]
