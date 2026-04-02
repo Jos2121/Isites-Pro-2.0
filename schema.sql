@@ -3,7 +3,7 @@
 -- =========================================================================
 -- Esto asegura que NOW() y los DEFAULT TIMESTAMP usen la hora de Lima.
 -- Reemplaza 'isitespro_postgresql' con el nombre real de tu BD en Easypanel si es distinto.
-ALTER DATABASE subscript-bd SET timezone TO 'America/Lima';
+ALTER DATABASE "subscript-bd" SET timezone TO 'America/Lima';
 SET TIMEZONE='America/Lima';
 
 -- =========================================================================
