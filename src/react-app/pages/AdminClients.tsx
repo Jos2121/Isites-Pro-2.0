@@ -528,6 +528,7 @@ function RenewSubscriptionModal({ subscription, onClose, onSuccess, organization
   const [loading, setLoading] = useState(false);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string>(subscription.plan_id.toString());
+  const [discount, setDiscount] = useState<number | ''>('');
 
   useEffect(() => {
     const fetchPlans = async () => {
@@ -554,7 +555,10 @@ function RenewSubscriptionModal({ subscription, onClose, onSuccess, organization
       const response = await apiCall(`/api/subscriptions/${subscription.id}/renew`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ plan_id: parseInt(selectedPlanId) })
+        body: JSON.stringify({ 
+          plan_id: parseInt(selectedPlanId),
+          discount: Number(discount) || 0 
+        })
       });
 
       if (response.ok) {
@@ -574,6 +578,7 @@ function RenewSubscriptionModal({ subscription, onClose, onSuccess, organization
 
   const selectedPlan = plans.find(p => p.id.toString() === selectedPlanId);
   const displayPrice = selectedPlan ? selectedPlan.price : subscription.plan_price;
+  const finalPrice = Math.max(0, displayPrice - (Number(discount) || 0));
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
@@ -611,10 +616,23 @@ function RenewSubscriptionModal({ subscription, onClose, onSuccess, organization
               )}
             </select>
           </div>
+
+          <div className="flex flex-col text-sm space-y-2 mt-4">
+            <label className="text-gray-500 font-medium">Descuento (S/):</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={discount}
+              onChange={(e) => setDiscount(e.target.value === '' ? '' : parseFloat(e.target.value))}
+              className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-emerald-500 focus:border-emerald-500 text-sm py-2 px-3"
+              placeholder="0.00"
+            />
+          </div>
           
           <div className="flex justify-between text-sm border-t border-gray-200 pt-3 mt-4">
             <span className="text-gray-500 font-medium mt-1">Monto a registrar:</span>
-            <span className="font-bold text-xl text-emerald-600">{formatCurrency(displayPrice)}</span>
+            <span className="font-bold text-xl text-emerald-600">{formatCurrency(finalPrice)}</span>
           </div>
         </div>
 

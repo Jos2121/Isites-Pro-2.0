@@ -356,6 +356,7 @@ app.post("/api/subscriptions/:id/renew", async (c) => {
     let body: any = {};
     try { body = await c.req.json(); } catch(e) {}
     const newPlanId = body.plan_id;
+    const discount = body.discount;
 
     return await sql.begin(async (tSql) => {
       const subs = await tSql`SELECT s.*, p.price, p.duration_months, p.duration_type FROM subscriptions s JOIN subscription_plans p ON s.plan_id = p.id WHERE s.id = ${subscriptionId} LIMIT 1`;
@@ -388,7 +389,8 @@ app.post("/api/subscriptions/:id/renew", async (c) => {
       if (newStartDateStr) await tSql`UPDATE subscriptions SET plan_id = ${planToUse.id}, start_date = ${newStartDateStr}, end_date = ${newEndDateStr}, status = 'active', updated_at = NOW() WHERE id = ${subscriptionId}`;
       else await tSql`UPDATE subscriptions SET plan_id = ${planToUse.id}, end_date = ${newEndDateStr}, status = 'active', updated_at = NOW() WHERE id = ${subscriptionId}`;
 
-      await tSql`INSERT INTO payments (organization_id, subscription_id, amount, payment_method, status, payment_date, payment_type, is_platform_income) VALUES (${sub.organization_id}, ${subscriptionId}, ${planToUse.price}, 'other', 'confirmed', NOW(), 'renewal', false)`;
+      const finalAmount = Math.max(0, planToUse.price - (Number(discount) || 0));
+      await tSql`INSERT INTO payments (organization_id, subscription_id, amount, payment_method, status, payment_date, payment_type, is_platform_income) VALUES (${sub.organization_id}, ${subscriptionId}, ${finalAmount}, 'other', 'confirmed', NOW(), 'renewal', false)`;
       return c.json({ message: "Renovada exitosamente", new_end_date: newEndDateStr });
     });
   } catch (error) {
@@ -1175,6 +1177,7 @@ app.post("/api/superadmin/admin-subscriptions/:id/renew", async (c) => {
     const userId = c.req.param("id");
     let body: any = {}; try { body = await c.req.json(); } catch(e) {}
     const newPlanId = body.plan_id;
+    const discount = body.discount;
     
     return await sql.begin(async (tSql) => {
       const users = await tSql`SELECT u.*, p.price, p.duration_months, p.duration_type FROM users u JOIN saas_plans p ON u.plan_id = p.id WHERE u.id = ${userId} AND u.role = 'admin' LIMIT 1`;
@@ -1205,7 +1208,8 @@ app.post("/api/superadmin/admin-subscriptions/:id/renew", async (c) => {
       if (newStartDateStr) await tSql`UPDATE users SET plan_id = ${planToUse.id}, subscription_start_date = ${newStartDateStr}, subscription_end_date = ${newEndDateStr}, is_active = true, updated_at = NOW() WHERE id = ${userId}`;
       else await tSql`UPDATE users SET plan_id = ${planToUse.id}, subscription_end_date = ${newEndDateStr}, is_active = true, updated_at = NOW() WHERE id = ${userId}`;
 
-      await tSql`INSERT INTO payments (organization_id, amount, payment_method, status, payment_date, payment_type, is_platform_income) VALUES (${targetUser.organization_id}, ${planToUse.price}, 'other', 'confirmed', NOW(), 'renewal', true)`;
+      const finalAmount = Math.max(0, planToUse.price - (Number(discount) || 0));
+      await tSql`INSERT INTO payments (organization_id, amount, payment_method, status, payment_date, payment_type, is_platform_income) VALUES (${targetUser.organization_id}, ${finalAmount}, 'other', 'confirmed', NOW(), 'renewal', true)`;
       return c.json({ message: "Renovación exitosa", new_end_date: newEndDateStr });
     });
   } catch (error) {
