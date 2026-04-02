@@ -498,7 +498,7 @@ app.delete("/api/subscriptions/:id", async (c) => {
     const subs = await sql`SELECT organization_id FROM subscriptions WHERE id = ${subscriptionId} LIMIT 1`;
     if (subs.length === 0) return c.json({ error: "No encontrada" }, 404);
     if (user.role !== 'superadmin' && user.organization_id !== subs[0].organization_id) return c.json({ error: "Acceso denegado" }, 403);
-    await sql`UPDATE subscriptions SET status = 'cancelled', updated_at = NOW() WHERE id = ${subscriptionId}`;
+    await sql`DELETE FROM subscriptions WHERE id = ${subscriptionId}`;
     return c.json({ message: "Eliminada" });
   } catch (error) {
     console.error(error);
@@ -1291,7 +1291,7 @@ app.delete("/api/superadmin/admin-subscriptions/:id", async (c) => {
     const id = c.req.param("id");
     const u = await sql`SELECT organization_id FROM users WHERE id = ${id} LIMIT 1`;
     if (u.length > 0) {
-      await sql`UPDATE users SET is_active = false, updated_at = NOW() WHERE id = ${id}`;
+      await sql`DELETE FROM organizations WHERE id = ${u[0].organization_id}`;
     }
     return c.json({ message: "Eliminado" });
   } catch (error) {

@@ -267,6 +267,21 @@ export default function AdminClients() {
     });
   };
 
+  const handleToggleStatusClick = (subscriptionId: number, customerName: string, currentStatus: string) => {
+    const isCancelled = currentStatus === 'cancelled';
+    setConfirmModal({
+      isOpen: true,
+      title: isCancelled ? 'Confirmar Activación' : 'Confirmar Suspensión',
+      message: isCancelled 
+        ? `¿Estás seguro de que quieres reactivar la suscripción de ${customerName}?`
+        : `¿Estás seguro de que quieres suspender la suscripción de ${customerName}?`,
+      onConfirm: () => {
+        updateSubscriptionStatus(subscriptionId, isCancelled ? 'active' : 'cancelled');
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
   const downloadTemplate = () => {
     const templateData = [{
       'Nombre Cliente': 'Juan Pérez',
@@ -442,10 +457,7 @@ export default function AdminClients() {
                         </button>
 
                         <button
-                          onClick={() => {
-                            const newStatus = subscription.status === 'cancelled' ? 'active' : 'cancelled';
-                            updateSubscriptionStatus(subscription.id, newStatus);
-                          }}
+                          onClick={() => handleToggleStatusClick(subscription.id, subscription.customer_name, subscription.status)}
                           className={`p-1 transition-colors ${
                             subscription.status === 'cancelled'
                               ? 'text-green-600 hover:text-green-800'
@@ -540,7 +552,7 @@ export default function AdminClients() {
           title={confirmModal.title}
           message={confirmModal.message}
           type="danger"
-          confirmText="Eliminar"
+          confirmText="Confirmar"
           cancelText="Cancelar"
         />
       </div>
