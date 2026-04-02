@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Search, Users, MessageCircle, Edit, Trash2, Plus, X as XIcon, RefreshCw, Ban, CheckCircle } from 'lucide-react';
+import { Search, Users, MessageCircle, Edit, Trash2, Plus, X as XIcon, RefreshCw, Ban, CheckCircle, Download, Upload } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { useAuth, apiCall } from '@/react-app/hooks/useAuth';
 import { useToast } from '@/react-app/hooks/useToast';
 import Layout from '@/react-app/components/Layout';
@@ -266,6 +267,28 @@ export default function AdminClients() {
     });
   };
 
+  const downloadTemplate = () => {
+    const templateData = [{
+      'Nombre Cliente': 'Juan Pérez',
+      'Teléfono': '987654321',
+      'Email': 'juan@ejemplo.com',
+      'Nombre del Plan': 'Plan Básico',
+      'Fecha Inicio (YYYY-MM-DD)': '2024-01-01',
+      'Descuento (S/)': 0,
+      'Notas': 'Cliente VIP'
+    }];
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
+    
+    const wscols = [
+      { wch: 25 }, { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 25 }, { wch: 15 }, { wch: 30 }
+    ];
+    ws['!cols'] = wscols;
+
+    XLSX.writeFile(wb, "plantilla_suscripciones.xlsx");
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -290,15 +313,22 @@ export default function AdminClients() {
               onClick={() => setShowNewSubscriptionModal(true)}
               className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 w-full sm:w-auto"
             >
-              <Users className="w-4 h-4 mr-2" />
+              <Plus className="w-4 h-4 mr-2" />
               Nueva Suscripción
             </button>
             <button
               onClick={() => setShowBulkSubscriptionModal(true)}
               className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 w-full sm:w-auto"
             >
-              <Users className="w-4 h-4 mr-2" />
-              Añadir Masivas
+              <Upload className="w-4 h-4 mr-2" />
+              Añadir Masivamente
+            </button>
+            <button
+              onClick={downloadTemplate}
+              className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 w-full sm:w-auto"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Plantilla
             </button>
           </div>
         </div>
@@ -469,7 +499,7 @@ export default function AdminClients() {
         )}
 
         {showBulkSubscriptionModal && (
-          <BulkSubscriptionModal 
+          <ExcelBulkModal 
             onClose={() => setShowBulkSubscriptionModal(false)}
             onSuccess={() => {
               setShowBulkSubscriptionModal(false);
@@ -1059,36 +1089,17 @@ function EditSubscriptionModal({ subscription, onClose, onSuccess, organizationI
   );
 }
 
-interface BulkSubscriptionRow {
-  id: string;
-  customer_name: string;
-  customer_phone: string;
-  customer_email: string;
-  plan_id: string;
-  start_date: string;
-  notes: string;
-}
-
-function BulkSubscriptionModal({ onClose, onSuccess, organizationId }: { 
+function ExcelBulkModal({ onClose, onSuccess, organizationId }: { 
   onClose: () => void; 
   onSuccess: () => void;
   organizationId?: number;
 }) {
   const { showSuccess, showError } = useToast();
-  const [rows, setRows] = useState<BulkSubscriptionRow[]>([
-    {
-      id: Math.random().toString(36).substring(2, 9),
-      customer_name: '',
-      customer_phone: '',
-      customer_email: '',
-      plan_id: '',
-      start_date: getTodayInputValue(),
-      notes: ''
-    }
-  ]);
-  const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(false);
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [fileSelected, setFileSelected] = useState<string | null>(null);
 
   useEffect(() => {
     if (organizationId) {
@@ -1108,41 +1119,73 @@ function BulkSubscriptionModal({ onClose, onSuccess, organizationId }: {
     }
   };
 
-  const addRow = () => {
-    setRows([...rows, {
-      id: Math.random().toString(36).substring(2, 9),
-      customer_name: '',
-      customer_phone: '',
-      customer_email: '',
-      plan_id: '',
-      start_date: getTodayInputValue(),
-      notes: ''
-    }]);
-  };
-
-  const removeRow = (id: string) => {
-    if (rows.length > 1) {
-      setRows(rows.filter(row => row.id !== id));
+  const parseExcelDate = (excelDate: any) => {
+    if (!excelDate) return getTodayInputValue();
+    if (typeof excelDate === 'number') {
+      const date = new Date((excelDate - (25567 + 2)) * 86400 * 1000);
+      return date.toISOString().split('T')[0];
     }
+    if (typeof excelDate === 'string') {
+      const match = excelDate.match(/^\d{4}-\d{2}-\d{2}$/);
+      if (match) return match[0];
+    }
+    return getTodayInputValue();
   };
 
-  const updateRow = (id: string, field: keyof BulkSubscriptionRow, value: string) => {
-    setRows(rows.map(row => row.id === id ? { ...row, [field]: value } : row));
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setFileSelected(file.name);
+    setErrors([]);
+    setParsedRows([]);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        setParsedRows(data);
+      } catch (err) {
+        setErrors(['Error al leer el archivo Excel. Asegúrate de usar la plantilla correcta.']);
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
+    if (parsedRows.length === 0) {
+      setErrors(['El archivo está vacío o no se pudo leer.']);
+      return;
+    }
+
     setLoading(true);
     setErrors([]);
 
     const newErrors: string[] = [];
     let successCount = 0;
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      
-      if (!row.customer_name || !row.customer_phone || !row.plan_id) {
-        newErrors.push(`Fila ${i + 1}: Faltan campos requeridos`);
+    for (let i = 0; i < parsedRows.length; i++) {
+      const row = parsedRows[i];
+      const customerName = row['Nombre Cliente'];
+      const customerPhone = row['Teléfono']?.toString();
+      const customerEmail = row['Email'];
+      const planName = row['Nombre del Plan'];
+      const startDate = parseExcelDate(row['Fecha Inicio (YYYY-MM-DD)']);
+      const discount = Number(row['Descuento (S/)']) || 0;
+      const notes = row['Notas'];
+
+      if (!customerName || !customerPhone || !planName) {
+        newErrors.push(`Fila ${i + 2}: Faltan campos requeridos (Nombre, Teléfono o Plan).`);
+        continue;
+      }
+
+      const matchedPlan = plans.find(p => p.name.trim().toLowerCase() === planName.toString().trim().toLowerCase());
+      if (!matchedPlan) {
+        newErrors.push(`Fila ${i + 2}: No se encontró el plan "${planName}".`);
         continue;
       }
 
@@ -1153,16 +1196,16 @@ function BulkSubscriptionModal({ onClose, onSuccess, organizationId }: {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             organization_id: organizationId!,
-            name: row.customer_name,
-            phone: row.customer_phone,
-            email: row.customer_email || null,
-            notes: row.notes || null
+            name: customerName.toString(),
+            phone: customerPhone,
+            email: customerEmail || null,
+            notes: notes || null
           }),
         });
 
         if (!customerResponse.ok) {
           const data = await customerResponse.json();
-          newErrors.push(`Fila ${i + 1}: ${data.error || 'Error al crear cliente'}`);
+          newErrors.push(`Fila ${i + 2}: ${data.error || 'Error al crear cliente'}`);
           continue;
         }
 
@@ -1175,10 +1218,11 @@ function BulkSubscriptionModal({ onClose, onSuccess, organizationId }: {
           body: JSON.stringify({
             organization_id: organizationId!,
             customer_id: customerData.customer.id,
-            plan_id: row.plan_id,
-            start_date: row.start_date,
+            plan_id: matchedPlan.id,
+            start_date: startDate,
             status: 'pending',
-            notes: row.notes || null
+            notes: notes || null,
+            discount: discount
           }),
         });
 
@@ -1186,10 +1230,10 @@ function BulkSubscriptionModal({ onClose, onSuccess, organizationId }: {
           successCount++;
         } else {
           const data = await subscriptionResponse.json();
-          newErrors.push(`Fila ${i + 1}: ${data.error || 'Error al crear suscripción'}`);
+          newErrors.push(`Fila ${i + 2}: ${data.error || 'Error al crear suscripción'}`);
         }
       } catch (error) {
-        newErrors.push(`Fila ${i + 1}: Error de conexión`);
+        newErrors.push(`Fila ${i + 2}: Error de conexión`);
       }
     }
 
@@ -1198,9 +1242,9 @@ function BulkSubscriptionModal({ onClose, onSuccess, organizationId }: {
     if (newErrors.length > 0) {
       setErrors(newErrors);
       if (successCount > 0) {
-        showSuccess('Parcialmente exitoso', `Se crearon ${successCount} de ${rows.length} suscripciones`);
+        showSuccess('Parcialmente exitoso', `Se crearon ${successCount} de ${parsedRows.length} suscripciones`);
       } else {
-        showError('Error', 'No se pudo crear ninguna suscripción');
+        showError('Error', 'No se pudo procesar ninguna suscripción. Revisa los errores.');
       }
     } else {
       showSuccess('Éxito', `Se crearon ${successCount} suscripciones correctamente`);
@@ -1210,180 +1254,74 @@ function BulkSubscriptionModal({ onClose, onSuccess, organizationId }: {
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
-      <div className="relative bg-white rounded-xl shadow-xl max-w-6xl w-full mx-auto max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-medium text-gray-900">Añadir Suscripciones Masivas</h3>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              <XIcon className="w-5 h-5" />
-            </button>
-          </div>
-          <p className="text-sm text-gray-500 mt-1">Complete los datos de cada suscripción que desea crear</p>
+      <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-gray-900">Añadir Masivamente por Excel</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <XIcon className="w-5 h-5" />
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50 sticky top-0 z-10">
-                <tr>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Nombre *
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Teléfono *
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Plan *
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Fecha Inicio *
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Notas
-                  </th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Acciones
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {rows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="px-3 py-2">
-                      <input
-                        type="text"
-                        required
-                        value={row.customer_name}
-                        onChange={(e) => updateRow(row.id, 'customer_name', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        placeholder="Nombre del cliente"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="tel"
-                        required
-                        value={row.customer_phone}
-                        onChange={(e) => updateRow(row.id, 'customer_phone', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        placeholder="Teléfono"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="email"
-                        value={row.customer_email}
-                        onChange={(e) => updateRow(row.id, 'customer_email', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        placeholder="Email (opcional)"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <select
-                        required
-                        value={row.plan_id}
-                        onChange={(e) => updateRow(row.id, 'plan_id', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      >
-                        <option value="">Seleccionar...</option>
-                        {plans.map((plan) => (
-                          <option key={plan.id} value={plan.id}>
-                            {plan.name} - S/ {plan.price}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="date"
-                        required
-                        value={row.start_date}
-                        onChange={(e) => updateRow(row.id, 'start_date', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="text"
-                        value={row.notes}
-                        onChange={(e) => updateRow(row.id, 'notes', e.target.value)}
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        placeholder="Notas (opcional)"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={() => removeRow(row.id)}
-                        disabled={rows.length === 1}
-                        className="text-red-600 hover:text-red-800 disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Eliminar fila"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="mb-6">
+          <p className="text-sm text-gray-500 mb-4">
+            Asegúrate de descargar y utilizar la plantilla correcta. El sistema buscará el plan por nombre exacto.
+          </p>
+
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors relative">
+            <input
+              type="file"
+              accept=".xlsx, .xls"
+              onChange={handleFileUpload}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            <Upload className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+            {fileSelected ? (
+              <p className="text-sm text-blue-600 font-medium">{fileSelected}</p>
+            ) : (
+              <p className="text-sm text-gray-600">Haz clic o arrastra tu archivo Excel aquí</p>
+            )}
           </div>
+        </div>
 
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={addRow}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Añadir Fila
-            </button>
-          </div>
-
-          {errors.length > 0 && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <h4 className="text-sm font-medium text-red-800 mb-2">Errores encontrados:</h4>
-              <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
-                {errors.map((error, index) => (
-                  <li key={index}>{error}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </form>
-
-        <div className="p-6 border-t border-gray-200 bg-gray-50">
-          <div className="flex justify-between items-center">
-            <p className="text-sm text-gray-600">
-              Total de suscripciones a crear: <span className="font-medium">{rows.length}</span>
+        {parsedRows.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <p className="text-sm text-blue-800">
+              Se han detectado <span className="font-bold">{parsedRows.length}</span> filas listas para procesar.
             </p>
-            <div className="flex space-x-3">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={loading}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                onClick={handleSubmit}
-                disabled={loading || rows.length === 0}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
-              >
-                {loading && (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                )}
-                {loading ? 'Creando...' : 'Crear Suscripciones'}
-              </button>
-            </div>
           </div>
+        )}
+
+        {errors.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 max-h-40 overflow-y-auto">
+            <h4 className="text-sm font-medium text-red-800 mb-2">Errores encontrados:</h4>
+            <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+              {errors.map((error, index) => (
+                <li key={index}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading || parsedRows.length === 0}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
+          >
+            {loading && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+            )}
+            {loading ? 'Procesando...' : 'Confirmar y Procesar'}
+          </button>
         </div>
       </div>
     </div>

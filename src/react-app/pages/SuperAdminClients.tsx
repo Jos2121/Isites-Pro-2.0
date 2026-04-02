@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Search, Users, Plus, Edit2, Trash2, MessageCircle, Ban, CheckCircle, RefreshCw } from 'lucide-react';
+import { Search, Users, Plus, Edit2, Trash2, MessageCircle, Ban, CheckCircle, RefreshCw, Upload, Download, X as XIcon } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import Layout from '@/react-app/components/Layout';
 import { apiCall } from '@/react-app/hooks/useAuth';
 import { useToast } from '@/react-app/hooks/useToast';
@@ -31,6 +32,7 @@ export default function SuperAdminClients() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [showNewSubscriptionModal, setShowNewSubscriptionModal] = useState(false);
+  const [showBulkSubscriptionModal, setShowBulkSubscriptionModal] = useState(false);
   const [editingSubscription, setEditingSubscription] = useState<AdminSubscription | null>(null);
   const [renewingSubscription, setRenewingSubscription] = useState<AdminSubscription | null>(null);
   const [superAdminPaymentMethods, setSuperAdminPaymentMethods] = useState<any[]>([]);
@@ -252,6 +254,29 @@ export default function SuperAdminClients() {
     return message;
   };
 
+  const downloadTemplate = () => {
+    const templateData = [{
+      'Organización': 'Empresa Demo SAC',
+      'Nombre Administrador': 'Carlos Gómez',
+      'Email': 'carlos@demo.com',
+      'Teléfono': '999888777',
+      'Contraseña': 'password123',
+      'Nombre del Plan': 'Plan Pro',
+      'Fecha Inicio (YYYY-MM-DD)': '2024-01-01',
+      'Descuento (S/)': 0
+    }];
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
+    
+    const wscols = [
+      { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 25 }, { wch: 15 }
+    ];
+    ws['!cols'] = wscols;
+
+    XLSX.writeFile(wb, "plantilla_administradores.xlsx");
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -271,13 +296,27 @@ export default function SuperAdminClients() {
             <p className="text-gray-600">Lista de suscripciones de administradores del SaaS</p>
           </div>
           
-          <div className="mt-4 lg:mt-0">
+          <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
             <button 
               onClick={() => setShowNewSubscriptionModal(true)}
               className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 w-full sm:w-auto"
             >
               <Plus className="w-4 h-4 mr-2" />
               Nueva Suscripción
+            </button>
+            <button
+              onClick={() => setShowBulkSubscriptionModal(true)}
+              className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 w-full sm:w-auto"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              Añadir Masivamente
+            </button>
+            <button
+              onClick={downloadTemplate}
+              className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 w-full sm:w-auto"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Plantilla
             </button>
           </div>
         </div>
@@ -439,6 +478,16 @@ export default function SuperAdminClients() {
             onClose={() => setShowNewSubscriptionModal(false)}
             onSuccess={() => {
               setShowNewSubscriptionModal(false);
+              fetchAdminSubscriptions();
+            }}
+          />
+        )}
+
+        {showBulkSubscriptionModal && (
+          <SuperAdminExcelBulkModal 
+            onClose={() => setShowBulkSubscriptionModal(false)}
+            onSuccess={() => {
+              setShowBulkSubscriptionModal(false);
               fetchAdminSubscriptions();
             }}
           />
@@ -1037,6 +1086,222 @@ function EditSubscriptionModal({ subscription, onClose, onSuccess }: {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SuperAdminExcelBulkModal({ onClose, onSuccess }: { 
+  onClose: () => void; 
+  onSuccess: () => void;
+}) {
+  const { showSuccess, showError } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [plans, setPlans] = useState<any[]>([]);
+  const [parsedRows, setParsedRows] = useState<any[]>([]);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [fileSelected, setFileSelected] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchPlans();
+  }, []);
+
+  const fetchPlans = async () => {
+    try {
+      const response = await apiCall('/api/superadmin/saas-plans');
+      if (response.ok) {
+        const data = await response.json();
+        setPlans(data.plans);
+      }
+    } catch (error) {
+      console.error('Error fetching plans:', error);
+    }
+  };
+
+  const parseExcelDate = (excelDate: any) => {
+    if (!excelDate) return getTodayInputValue();
+    if (typeof excelDate === 'number') {
+      const date = new Date((excelDate - (25567 + 2)) * 86400 * 1000);
+      return date.toISOString().split('T')[0];
+    }
+    if (typeof excelDate === 'string') {
+      const match = excelDate.match(/^\d{4}-\d{2}-\d{2}$/);
+      if (match) return match[0];
+    }
+    return getTodayInputValue();
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setFileSelected(file.name);
+    setErrors([]);
+    setParsedRows([]);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        setParsedRows(data);
+      } catch (err) {
+        setErrors(['Error al leer el archivo Excel. Asegúrate de usar la plantilla correcta.']);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleSubmit = async () => {
+    if (parsedRows.length === 0) {
+      setErrors(['El archivo está vacío o no se pudo leer.']);
+      return;
+    }
+
+    setLoading(true);
+    setErrors([]);
+
+    const newErrors: string[] = [];
+    let successCount = 0;
+
+    for (let i = 0; i < parsedRows.length; i++) {
+      const row = parsedRows[i];
+      const orgName = row['Organización'];
+      const adminName = row['Nombre Administrador'];
+      const adminEmail = row['Email'];
+      const adminPhone = row['Teléfono']?.toString();
+      const password = row['Contraseña']?.toString();
+      const planName = row['Nombre del Plan'];
+      const startDate = parseExcelDate(row['Fecha Inicio (YYYY-MM-DD)']);
+      const discount = Number(row['Descuento (S/)']) || 0;
+
+      if (!orgName || !adminName || !adminEmail || !password || !planName) {
+        newErrors.push(`Fila ${i + 2}: Faltan campos requeridos (Organización, Nombre, Email, Contraseña o Plan).`);
+        continue;
+      }
+
+      const matchedPlan = plans.find(p => p.name.trim().toLowerCase() === planName.toString().trim().toLowerCase());
+      if (!matchedPlan) {
+        newErrors.push(`Fila ${i + 2}: No se encontró el plan "${planName}".`);
+        continue;
+      }
+
+      try {
+        const response = await apiCall('/api/superadmin/create-subscription', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            organization_name: orgName.toString(),
+            name: adminName.toString(),
+            email: adminEmail.toString(),
+            phone: adminPhone || null,
+            password: password,
+            plan_id: matchedPlan.id,
+            start_date: startDate,
+            discount: discount
+          }),
+        });
+
+        if (response.ok) {
+          successCount++;
+        } else {
+          const data = await response.json();
+          newErrors.push(`Fila ${i + 2}: ${data.error || 'Error al crear suscripción'}`);
+        }
+      } catch (error) {
+        newErrors.push(`Fila ${i + 2}: Error de conexión`);
+      }
+    }
+
+    setLoading(false);
+
+    if (newErrors.length > 0) {
+      setErrors(newErrors);
+      if (successCount > 0) {
+        showSuccess('Parcialmente exitoso', `Se crearon ${successCount} de ${parsedRows.length} administradores`);
+      } else {
+        showError('Error', 'No se pudo procesar ningún administrador. Revisa los errores.');
+      }
+    } else {
+      showSuccess('Éxito', `Se crearon ${successCount} administradores correctamente`);
+      onSuccess();
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+      <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-gray-900">Añadir Masivamente por Excel</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <XIcon className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="mb-6">
+          <p className="text-sm text-gray-500 mb-4">
+            Asegúrate de descargar y utilizar la plantilla correcta. El sistema buscará el plan por nombre exacto.
+          </p>
+
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors relative">
+            <input
+              type="file"
+              accept=".xlsx, .xls"
+              onChange={handleFileUpload}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            <Upload className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+            {fileSelected ? (
+              <p className="text-sm text-blue-600 font-medium">{fileSelected}</p>
+            ) : (
+              <p className="text-sm text-gray-600">Haz clic o arrastra tu archivo Excel aquí</p>
+            )}
+          </div>
+        </div>
+
+        {parsedRows.length > 0 && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <p className="text-sm text-blue-800">
+              Se han detectado <span className="font-bold">{parsedRows.length}</span> filas listas para procesar.
+            </p>
+          </div>
+        )}
+
+        {errors.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 max-h-40 overflow-y-auto">
+            <h4 className="text-sm font-medium text-red-800 mb-2">Errores encontrados:</h4>
+            <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+              {errors.map((error, index) => (
+                <li key={index}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading || parsedRows.length === 0}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50"
+          >
+            {loading && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+            )}
+            {loading ? 'Procesando...' : 'Confirmar y Procesar'}
+          </button>
         </div>
       </div>
     </div>
