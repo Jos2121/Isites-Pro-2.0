@@ -247,7 +247,9 @@ app.get("/api/subscriptions", async (c) => {
   try {
     const user = c.get('jwtPayload');
     const organizationId = c.req.query("organization_id");
-    const statusFilter = c.req.query("status");
+    const statusFilter = c.req.query("status") || "all";
+    const search = c.req.query("search") || "";
+    const sort = c.req.query("sort") || "recent";
     
     const page = parseInt(c.req.query("page") || "1", 10) || 1;
     const limit = parseInt(c.req.query("limit") || "50", 10) || 50;
@@ -260,26 +262,32 @@ app.get("/api/subscriptions", async (c) => {
     await sql`UPDATE subscriptions SET status = 'active' WHERE organization_id = ${organizationId} AND status = 'pending' AND start_date <= ${todayStr}`;
     await sql`UPDATE subscriptions SET status = 'expired' WHERE organization_id = ${organizationId} AND status = 'active' AND end_date < ${todayStr}`;
 
-    let countResult;
-    let subsQuery;
+    const searchCond = search ? sql` AND (c.name ILIKE ${'%' + search + '%'} OR c.phone ILIKE ${'%' + search + '%'} OR c.email ILIKE ${'%' + search + '%'} OR p.name ILIKE ${'%' + search + '%'})` : sql``;
+    const statusCond = statusFilter !== 'all' ? sql` AND s.status = ${statusFilter}` : sql``;
 
-    if (statusFilter && statusFilter !== 'all') {
-      countResult = await sql`SELECT COUNT(*) FROM subscriptions WHERE organization_id = ${organizationId} AND status = ${statusFilter}`;
-      subsQuery = await sql`
-        SELECT s.*, c.name as cust_name, c.phone as cust_phone, c.email as cust_email,
-               p.name as plan_name, p.price as plan_price, p.duration_type as plan_duration_type, u.name as emp_name
-        FROM subscriptions s LEFT JOIN customers c ON s.customer_id = c.id LEFT JOIN subscription_plans p ON s.plan_id = p.id LEFT JOIN users u ON s.assigned_employee_id = u.id
-        WHERE s.organization_id = ${organizationId} AND s.status = ${statusFilter} ORDER BY s.created_at DESC LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else {
-      countResult = await sql`SELECT COUNT(*) FROM subscriptions WHERE organization_id = ${organizationId}`;
-      subsQuery = await sql`
-        SELECT s.*, c.name as cust_name, c.phone as cust_phone, c.email as cust_email,
-               p.name as plan_name, p.price as plan_price, p.duration_type as plan_duration_type, u.name as emp_name
-        FROM subscriptions s LEFT JOIN customers c ON s.customer_id = c.id LEFT JOIN subscription_plans p ON s.plan_id = p.id LEFT JOIN users u ON s.assigned_employee_id = u.id
-        WHERE s.organization_id = ${organizationId} ORDER BY s.created_at DESC LIMIT ${limit} OFFSET ${offset}
-      `;
-    }
+    let orderByCond;
+    if (sort === 'asc') orderByCond = sql`ORDER BY c.name ASC`;
+    else if (sort === 'desc_name') orderByCond = sql`ORDER BY c.name DESC`;
+    else orderByCond = sql`ORDER BY s.created_at DESC`;
+
+    const countResult = await sql`
+      SELECT COUNT(*) FROM subscriptions s 
+      LEFT JOIN customers c ON s.customer_id = c.id 
+      LEFT JOIN subscription_plans p ON s.plan_id = p.id
+      WHERE s.organization_id = ${organizationId} ${statusCond} ${searchCond}
+    `;
+
+    const subsQuery = await sql`
+      SELECT s.*, c.name as cust_name, c.phone as cust_phone, c.email as cust_email,
+             p.name as plan_name, p.price as plan_price, p.duration_type as plan_duration_type, u.name as emp_name
+      FROM subscriptions s 
+      LEFT JOIN customers c ON s.customer_id = c.id 
+      LEFT JOIN subscription_plans p ON s.plan_id = p.id 
+      LEFT JOIN users u ON s.assigned_employee_id = u.id
+      WHERE s.organization_id = ${organizationId} ${statusCond} ${searchCond}
+      ${orderByCond} 
+      LIMIT ${limit} OFFSET ${offset}
+    `;
     
     const total = parseInt(countResult[0].count, 10);
 
@@ -1223,42 +1231,61 @@ app.post("/api/superadmin/admin-subscriptions/:id/renew", async (c) => {
 
 app.get("/api/superadmin/admin-subscriptions", async (c) => {
   try {
+    const statusFilter = c.req.query("status") || "all";
+    const search = c.req.query("search") || "";
+    const sort = c.req.query("sort") || "recent";
+    const todayStr = getLocalTodayString();
+
     const page = parseInt(c.req.query("page") || "1", 10) || 1;
     const limit = parseInt(c.req.query("limit") || "50", 10) || 50;
     const offset = (page - 1) * limit;
 
-    const countResult = await sql`SELECT COUNT(*) FROM users WHERE role = 'admin'`;
+    const calcStatusSql = sql`
+      CASE
+        WHEN u.is_active = false THEN 'cancelled'
+        WHEN u.subscription_end_date < DATE(${todayStr}) THEN 'expired'
+        WHEN u.subscription_start_date > DATE(${todayStr}) THEN 'pending'
+        WHEN u.subscription_end_date <= (DATE(${todayStr}) + INTERVAL '3 days') THEN 'expiring'
+        ELSE 'active'
+      END
+    `;
+
+    const searchCond = search ? sql` AND (u.name ILIKE ${'%' + search + '%'} OR u.email ILIKE ${'%' + search + '%'} OR o.name ILIKE ${'%' + search + '%'} OR p.name ILIKE ${'%' + search + '%'})` : sql``;
+    const statusCond = statusFilter !== 'all' ? sql` AND (${calcStatusSql}) = ${statusFilter}` : sql``;
+
+    let orderByCond;
+    if (sort === 'asc') orderByCond = sql`ORDER BY u.name ASC`;
+    else if (sort === 'desc_name') orderByCond = sql`ORDER BY u.name DESC`;
+    else orderByCond = sql`ORDER BY u.created_at DESC`;
+
+    const countResult = await sql`
+      SELECT COUNT(*) FROM users u
+      LEFT JOIN organizations o ON u.organization_id = o.id 
+      LEFT JOIN saas_plans p ON u.plan_id = p.id 
+      WHERE u.role = 'admin' ${statusCond} ${searchCond}
+    `;
     const total = parseInt(countResult[0].count, 10);
 
-    const todayStr = getLocalTodayString();
     const users = await sql`
-      SELECT u.*, o.name as org_name, p.name as plan_name, p.price as plan_price, p.duration_type 
+      SELECT u.*, o.name as org_name, p.name as plan_name, p.price as plan_price, p.duration_type,
+             ${calcStatusSql} as calc_status
       FROM users u 
       LEFT JOIN organizations o ON u.organization_id = o.id 
       LEFT JOIN saas_plans p ON u.plan_id = p.id 
-      WHERE u.role = 'admin' 
-      ORDER BY u.created_at DESC 
+      WHERE u.role = 'admin' ${statusCond} ${searchCond}
+      ${orderByCond} 
       LIMIT ${limit} OFFSET ${offset}
     `;
 
     const subscriptions = users.map((u: any) => {
-      let status = 'pending';
       const startDateStr = u.subscription_start_date ? (typeof u.subscription_start_date === 'string' ? u.subscription_start_date.split('T')[0] : u.subscription_start_date.toISOString().split('T')[0]) : null;
       const endDateStr = u.subscription_end_date ? (typeof u.subscription_end_date === 'string' ? u.subscription_end_date.split('T')[0] : u.subscription_end_date.toISOString().split('T')[0]) : null;
-
-      if (!u.is_active) status = 'cancelled';
-      else if (endDateStr && endDateStr < todayStr) status = 'expired';
-      else if (startDateStr && startDateStr > todayStr) status = 'pending';
-      else if (endDateStr && endDateStr >= todayStr) {
-        const diffDays = (new Date(endDateStr).getTime() - new Date(todayStr).getTime()) / (1000 * 3600 * 24);
-        status = diffDays <= 3 ? 'expiring' : 'active';
-      }
 
       return {
         id: u.id, admin_name: u.name, admin_email: u.email, admin_phone: u.phone,
         start_date: startDateStr, end_date: endDateStr, is_active: u.is_active, created_at: u.created_at,
         organization_name: u.org_name, plan_id: u.plan_id, plan_name: u.plan_name, plan_price: u.plan_price,
-        duration_type: u.duration_type, status
+        duration_type: u.duration_type, status: u.calc_status
       };
     });
     

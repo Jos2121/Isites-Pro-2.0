@@ -45,9 +45,10 @@ export default function AdminClients() {
   const { user } = useAuth();
   const { showSuccess, showError } = useToast();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [filteredSubscriptions, setFilteredSubscriptions] = useState<Subscription[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sortOrder, setSortOrder] = useState('recent');
   const [loading, setLoading] = useState(true);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [showNewSubscriptionModal, setShowNewSubscriptionModal] = useState(false);
@@ -72,19 +73,32 @@ export default function AdminClients() {
     onConfirm: () => {}
   });
 
-  // Fetch subscriptions depends on currentPage
-  useEffect(() => {
-    if (user?.organization_id) {
-      fetchSubscriptions();
-    }
-  }, [user, currentPage]);
-
   // Fetch payment methods only once per user change
   useEffect(() => {
     if (user?.organization_id) {
       fetchPaymentMethods();
     }
   }, [user]);
+
+  // Debounce the search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Reiniciar a la primera página cuando cambia algún filtro u ordenamiento
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, debouncedSearch, sortOrder]);
+
+  // Fetch subscriptions when filters, page or user changes
+  useEffect(() => {
+    if (user?.organization_id) {
+      fetchSubscriptions();
+    }
+  }, [user, currentPage, debouncedSearch, statusFilter, sortOrder]);
 
   // Auto-refresh subscriptions every 30 seconds
   useEffect(() => {
@@ -94,37 +108,19 @@ export default function AdminClients() {
       }, 30000);
       return () => clearInterval(interval);
     }
-  }, [user, currentPage]);
-
-  useEffect(() => {
-    let filtered = subscriptions;
-    
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(sub => sub.status === statusFilter);
-    }
-    
-    if (searchTerm) {
-      filtered = filtered.filter(sub => 
-        sub.customer_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        sub.customer_phone.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (sub.customer_email && sub.customer_email.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        sub.plan_name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    
-    setFilteredSubscriptions(filtered);
-  }, [subscriptions, statusFilter, searchTerm]);
+  }, [user, currentPage, debouncedSearch, statusFilter, sortOrder]);
 
   const fetchSubscriptions = async () => {
     try {
-      const response = await apiCall(`/api/subscriptions?organization_id=${user?.organization_id}&page=${currentPage}&limit=${ITEMS_PER_PAGE}`);
+      setLoading(true);
+      const url = `/api/subscriptions?organization_id=${user?.organization_id}&page=${currentPage}&limit=${ITEMS_PER_PAGE}&status=${statusFilter}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortOrder}`;
+      const response = await apiCall(url);
       if (response.ok) {
         const data = await response.json();
         setSubscriptions(data.subscriptions || []);
         if (data.pagination) {
           setTotalPages(data.pagination.totalPages);
         } else {
-          // Fallback seguro en caso de que el backend aún no retorne pagination
           setTotalPages(Math.ceil((data.subscriptions?.length || 0) / ITEMS_PER_PAGE) || 1);
         }
       }
@@ -304,7 +300,7 @@ export default function AdminClients() {
     XLSX.writeFile(wb, "plantilla_suscripciones.xlsx");
   };
 
-  if (loading) {
+  if (loading && subscriptions.length === 0) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-64">
@@ -374,6 +370,16 @@ export default function AdminClients() {
                 <option value="expired">Vencidas</option>
                 <option value="cancelled">Canceladas</option>
               </select>
+
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value)}
+                className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              >
+                <option value="recent">Más recientes</option>
+                <option value="asc">Nombre (A-Z)</option>
+                <option value="desc_name">Nombre (Z-A)</option>
+              </select>
             </div>
           </div>
         </div>
@@ -392,7 +398,7 @@ export default function AdminClients() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredSubscriptions.map((subscription) => (
+                {subscriptions.map((subscription) => (
                   <tr key={subscription.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div>
@@ -486,7 +492,7 @@ export default function AdminClients() {
           />
         </div>
 
-        {filteredSubscriptions.length === 0 && (
+        {subscriptions.length === 0 && !loading && (
           <div className="text-center py-12">
             <Users className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">No hay clientes</h3>
