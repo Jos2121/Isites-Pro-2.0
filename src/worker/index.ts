@@ -1243,9 +1243,9 @@ app.get("/api/superadmin/admin-subscriptions", async (c) => {
     const calcStatusSql = sql`
       CASE
         WHEN u.is_active = false THEN 'cancelled'
-        WHEN u.subscription_end_date < DATE(${todayStr}) THEN 'expired'
-        WHEN u.subscription_start_date > DATE(${todayStr}) THEN 'pending'
-        WHEN u.subscription_end_date <= (DATE(${todayStr}) + INTERVAL '3 days') THEN 'expiring'
+        WHEN u.subscription_end_date::date < CURRENT_DATE THEN 'expired'
+        WHEN u.subscription_start_date::date > CURRENT_DATE THEN 'pending'
+        WHEN u.subscription_end_date::date <= (CURRENT_DATE + 3) THEN 'expiring'
         ELSE 'active'
       END
     `;
